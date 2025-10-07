@@ -1,11 +1,12 @@
-# Echoes of Tomorrow - Light Arm Firmware
+# Echoes of Tomorrow - Toppiece Firmware
 
-This repository contains the embedded firmware for the microcontrollers that operate the LED light arm in the **Echoes of Tomorrow** GLOW 2025 project.
+This repository contains the embedded firmware for the microcontrollers that operate the toppiece in the **Echoes of Tomorrow** GLOW 2025 project.
 
 ## Overview
 - Written in C++
-- Compiled and uploaded to microcontrollers (e.g., Arduino or compatible boards)
-- Receives audio-reactive signals from the central unit
+- Compiled and uploaded to microcontrollers (ESP32 S3)
+- Receives when the climax starts
+- Receives when the climax is over
 
 ## Project Structure
 ```
@@ -16,15 +17,15 @@ arm/
 ```
 
 ## Setup Instructions
-1. Open `firmware/arm.ino` in the Arduino IDE
-2. Select the correct board (e.g., Arduino Nano / Teensy 4.0)
+1. Open `firmware/top.ino` in the Arduino IDE
+2. Select the correct board (ESP32 doit devkit)
 3. Upload to the connected board
 
 ## Testing
 Diagnostic sketches are in `tests/`
 
 ## Documentation
-See `documentation/` or the [Wiki](https://github.com/GLOW-Delta-2025/central-unit/wiki) for details on architecture, function descriptions, and setup.
+See `documentation/` or the [Wiki](https://github.com/GLOW-Delta-2025/master/wiki) for details on architecture, function descriptions, and setup.
 
 ## Branches
 - `main`: Production-ready code
