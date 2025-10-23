@@ -359,14 +359,54 @@ void chargingEffect() {
     }
 #endif
 
-// TODO: When enabling all 6 strips, add identical chargingEffect code for strips 2-5
-// Simply copy the #ifdef ENABLE_STRIP1 block above and replace "strip1" with strip2/3/4/5
-// This ensures all 5 main strips charge in perfect synchronization.
-// Example pattern:
-// #ifdef ENABLE_STRIP2
-//   [same code as STRIP1 block, replace strip1 with strip2]
-// #endif
-// Repeat for STRIP3, STRIP4, STRIP5
+  // TODO: When enabling all 6 strips, add identical chargingEffect code for strips 2-5
+  // Simply uncomment lines below
+  // This ensures all 5 main strips charge in perfect synchronization.
+  // Example implementation (commented out for now):
+  //
+  // #ifdef ENABLE_STRIP2
+  //   for (int i = 0; i < min(fillProgress, NUM_LEDS_PER_STRIP); i++) {
+  //     uint8_t blue = map(i, 0, NUM_LEDS_PER_STRIP - 1, 255, 0);
+  //     uint8_t white = map(i, 0, NUM_LEDS_PER_STRIP - 1, 0, 255);
+  //     strip2[i] = CRGB(white, white, blue);
+  //   }
+  //   for (int i = fillProgress; i < NUM_LEDS_PER_STRIP; i++) {
+  //     strip2[i] = CRGB::Black;
+  //   }
+  // #endif
+  //
+  // #ifdef ENABLE_STRIP3
+  //   for (int i = 0; i < min(fillProgress, NUM_LEDS_PER_STRIP); i++) {
+  //     uint8_t blue = map(i, 0, NUM_LEDS_PER_STRIP - 1, 255, 0);
+  //     uint8_t white = map(i, 0, NUM_LEDS_PER_STRIP - 1, 0, 255);
+  //     strip3[i] = CRGB(white, white, blue);
+  //   }
+  //   for (int i = fillProgress; i < NUM_LEDS_PER_STRIP; i++) {
+  //     strip3[i] = CRGB::Black;
+  //   }
+  // #endif
+  //
+  // #ifdef ENABLE_STRIP4
+  //   for (int i = 0; i < min(fillProgress, NUM_LEDS_PER_STRIP); i++) {
+  //     uint8_t blue = map(i, 0, NUM_LEDS_PER_STRIP - 1, 255, 0);
+  //     uint8_t white = map(i, 0, NUM_LEDS_PER_STRIP - 1, 0, 255);
+  //     strip4[i] = CRGB(white, white, blue);
+  //   }
+  //   for (int i = fillProgress; i < NUM_LEDS_PER_STRIP; i++) {
+  //     strip4[i] = CRGB::Black;
+  //   }
+  // #endif
+  //
+  // #ifdef ENABLE_STRIP5
+  //   for (int i = 0; i < min(fillProgress, NUM_LEDS_PER_STRIP); i++) {
+  //     uint8_t blue = map(i, 0, NUM_LEDS_PER_STRIP - 1, 255, 0);
+  //     uint8_t white = map(i, 0, NUM_LEDS_PER_STRIP - 1, 0, 255);
+  //     strip5[i] = CRGB(white, white, blue);
+  //   }
+  //   for (int i = fillProgress; i < NUM_LEDS_PER_STRIP; i++) {
+  //     strip5[i] = CRGB::Black;
+  //   }
+  // #endif
   }
 }
 
