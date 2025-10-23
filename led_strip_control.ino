@@ -52,12 +52,6 @@
 
 // Enable/disable strips (comment out to disable)
 // For PRODUCTION with all 6 strips, uncomment all lines below:
-// #define ENABLE_STRIP1
-// #define ENABLE_STRIP2
-// #define ENABLE_STRIP3
-// #define ENABLE_STRIP4
-// #define ENABLE_STRIP5
-// #define ENABLE_STRIP6
 
 // TESTING CONFIGURATION (currently active):
 // Only strips 1 and 6 enabled. Strips 1-5 will be synchronized when all are enabled.
@@ -94,6 +88,29 @@ CRGB strip5[NUM_LEDS_PER_STRIP];
 #ifdef ENABLE_STRIP6
 CRGB strip6[NUM_LEDS_PER_STRIP];
 #endif
+
+// Lookup table of strips participating in the charging phase (strips 1-5).
+// Each pointer appears only if the corresponding strip is enabled, allowing
+// chargingEffect() to iterate across all active strips with identical logic.
+static CRGB* const chargingStrips[] = {
+#ifdef ENABLE_STRIP1
+  strip1,
+#endif
+#ifdef ENABLE_STRIP2
+  strip2,
+#endif
+#ifdef ENABLE_STRIP3
+  strip3,
+#endif
+#ifdef ENABLE_STRIP4
+  strip4,
+#endif
+#ifdef ENABLE_STRIP5
+  strip5,
+#endif
+};
+
+static const size_t chargingStripCount = sizeof(chargingStrips) / sizeof(chargingStrips[0]);
 
 // Timing variables for the climax sequence
 // Sequence phases:
@@ -338,75 +355,32 @@ void checkSerialCommands() {
 void chargingEffect() {
   static unsigned long lastUpdate = 0;
 
-  if (millis() - lastUpdate > 100) {  // Update every 100ms
-    lastUpdate = millis();
+  if (millis() - lastUpdate <= 100) {
+    return;  // Maintain 100ms update cadence for a smooth fill
+  }
+  lastUpdate = millis();
 
-#ifdef ENABLE_STRIP1
-    unsigned long elapsedTime = millis() - startTime;
-    int fillProgress = map(elapsedTime, 0, flashDuration, 0, NUM_LEDS_PER_STRIP);
+  if (chargingStripCount == 0) {
+    return;  // No strips are enabled for the charging phase
+  }
 
-    // Fill from start to current progress
-    for (int i = 0; i < min(fillProgress, NUM_LEDS_PER_STRIP); i++) {
-      // Gradient from blue (start) to white (end)
+  const unsigned long elapsedTime = millis() - startTime;
+  int fillProgress = map(elapsedTime, 0, flashDuration, 0, NUM_LEDS_PER_STRIP);
+  fillProgress = constrain(fillProgress, 0, NUM_LEDS_PER_STRIP);
+
+  // Apply identical gradient and clearing logic to every charging strip
+  for (size_t idx = 0; idx < chargingStripCount; ++idx) {
+    CRGB* leds = chargingStrips[idx];
+
+    for (int i = 0; i < fillProgress; ++i) {
       uint8_t blue = map(i, 0, NUM_LEDS_PER_STRIP - 1, 255, 0);
       uint8_t white = map(i, 0, NUM_LEDS_PER_STRIP - 1, 0, 255);
-      strip1[i] = CRGB(white, white, blue);
+      leds[i] = CRGB(white, white, blue);
     }
 
-    // Clear the rest
-    for (int i = fillProgress; i < NUM_LEDS_PER_STRIP; i++) {
-      strip1[i] = CRGB::Black;
+    for (int i = fillProgress; i < NUM_LEDS_PER_STRIP; ++i) {
+      leds[i] = CRGB::Black;
     }
-#endif
-
-  // TODO: When enabling all 6 strips, add identical chargingEffect code for strips 2-5
-  // Simply uncomment lines below
-  // This ensures all 5 main strips charge in perfect synchronization.
-  // Example implementation (commented out for now):
-  //
-  // #ifdef ENABLE_STRIP2
-  //   for (int i = 0; i < min(fillProgress, NUM_LEDS_PER_STRIP); i++) {
-  //     uint8_t blue = map(i, 0, NUM_LEDS_PER_STRIP - 1, 255, 0);
-  //     uint8_t white = map(i, 0, NUM_LEDS_PER_STRIP - 1, 0, 255);
-  //     strip2[i] = CRGB(white, white, blue);
-  //   }
-  //   for (int i = fillProgress; i < NUM_LEDS_PER_STRIP; i++) {
-  //     strip2[i] = CRGB::Black;
-  //   }
-  // #endif
-  //
-  // #ifdef ENABLE_STRIP3
-  //   for (int i = 0; i < min(fillProgress, NUM_LEDS_PER_STRIP); i++) {
-  //     uint8_t blue = map(i, 0, NUM_LEDS_PER_STRIP - 1, 255, 0);
-  //     uint8_t white = map(i, 0, NUM_LEDS_PER_STRIP - 1, 0, 255);
-  //     strip3[i] = CRGB(white, white, blue);
-  //   }
-  //   for (int i = fillProgress; i < NUM_LEDS_PER_STRIP; i++) {
-  //     strip3[i] = CRGB::Black;
-  //   }
-  // #endif
-  //
-  // #ifdef ENABLE_STRIP4
-  //   for (int i = 0; i < min(fillProgress, NUM_LEDS_PER_STRIP); i++) {
-  //     uint8_t blue = map(i, 0, NUM_LEDS_PER_STRIP - 1, 255, 0);
-  //     uint8_t white = map(i, 0, NUM_LEDS_PER_STRIP - 1, 0, 255);
-  //     strip4[i] = CRGB(white, white, blue);
-  //   }
-  //   for (int i = fillProgress; i < NUM_LEDS_PER_STRIP; i++) {
-  //     strip4[i] = CRGB::Black;
-  //   }
-  // #endif
-  //
-  // #ifdef ENABLE_STRIP5
-  //   for (int i = 0; i < min(fillProgress, NUM_LEDS_PER_STRIP); i++) {
-  //     uint8_t blue = map(i, 0, NUM_LEDS_PER_STRIP - 1, 255, 0);
-  //     uint8_t white = map(i, 0, NUM_LEDS_PER_STRIP - 1, 0, 255);
-  //     strip5[i] = CRGB(white, white, blue);
-  //   }
-  //   for (int i = fillProgress; i < NUM_LEDS_PER_STRIP; i++) {
-  //     strip5[i] = CRGB::Black;
-  //   }
-  // #endif
   }
 }
 
