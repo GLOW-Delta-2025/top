@@ -56,7 +56,7 @@
 // TESTING CONFIGURATION (currently active):
 // Only strips 1 and 6 enabled. Strips 1-5 will be synchronized when all are enabled.
 #define ENABLE_STRIP1  // Main 5-strip array (charging effect)
-//#define ENABLE_STRIP2
+#define ENABLE_STRIP2
 //#define ENABLE_STRIP3
 //#define ENABLE_STRIP4
 //#define ENABLE_STRIP5
@@ -112,18 +112,19 @@ static CRGB* const chargingStrips[] = {
 
 static const size_t chargingStripCount = sizeof(chargingStrips) / sizeof(chargingStrips[0]);
 
+// State machine management
+enum DeviceState { IDLE, RUNNING };
+DeviceState currentState = IDLE;
+
 // Timing variables for the climax sequence
 // Sequence phases:
 // 1. Charging phase (flashDuration): Strips 1-5 progressively fill with blue→white gradient
 // 2. Flow phase (burstDuration): Strip 6 activates with intense animated stream
 unsigned long startTime;
-unsigned long fillDuration = 30000;  // 30 seconds to fill strips 1-5 (legacy variable, not used)
-unsigned long strip6Delay = 5000;    // 5 seconds delay before strip 6 (legacy variable, not used)
 unsigned long flashDuration = 30000;  // 30 seconds charging for strips 1-5
 unsigned long burstDuration = 30000;  // 30 seconds for intense flow on strip 6
 bool strips1to5Filled = false;
 bool strip6Active = false;
-bool sequenceActive = false;
 bool strip1Flashing = false;
 bool strip6Bursting = false;
 
@@ -176,26 +177,47 @@ void setup() {
   Serial.println("LED Strip Installation Started");
 }
 
+// Helper: turn off all enabled strips
+static void turnOffAllStrips() {
+#ifdef ENABLE_STRIP1
+  fill_solid(strip1, NUM_LEDS_PER_STRIP, CRGB::Black);
+#endif
+#ifdef ENABLE_STRIP2
+  fill_solid(strip2, NUM_LEDS_PER_STRIP, CRGB::Black);
+#endif
+#ifdef ENABLE_STRIP3
+  fill_solid(strip3, NUM_LEDS_PER_STRIP, CRGB::Black);
+#endif
+#ifdef ENABLE_STRIP4
+  fill_solid(strip4, NUM_LEDS_PER_STRIP, CRGB::Black);
+#endif
+#ifdef ENABLE_STRIP5
+  fill_solid(strip5, NUM_LEDS_PER_STRIP, CRGB::Black);
+#endif
+#ifdef ENABLE_STRIP6
+  fill_solid(strip6, NUM_LEDS_PER_STRIP, CRGB::Black);
+#endif
+}
+
 void loop() {
   // Check for serial commands from both USB (Serial) and external TX/RX (Serial2)
   checkSerialCommands();
 
   unsigned long currentTime = millis();
 
-  // Main state machine: if sequence is active, run the climax animation
-  if (sequenceActive) {
+  // Main state machine: handles RUNNING and IDLE states
+  if (currentState == RUNNING) {
     unsigned long elapsedTime = currentTime - startTime;
 
     // PHASE 1: CHARGING (0-30 seconds)
     // Strips 1-5: Progressive fill from blue to white
-    // This phase creates the "buildup" effect, with all 5 strips synchronized.
     if (!strip1Flashing && elapsedTime < flashDuration) {
       strip1Flashing = true;
       Serial.println("Starting strip 1 charging");
     }
 
     if (strip1Flashing && elapsedTime < flashDuration) {
-      chargingEffect();  // This updates strip 1 (and will update 2-5 once they're enabled)
+      chargingEffect();
     }
 
     // PHASE 2: INTENSE FLOW (30-60 seconds)
@@ -211,33 +233,46 @@ void loop() {
       intenseFlow();
     }
 
-    // End sequence: turn off all strips and signal completion
+    // End sequence: transition to IDLE, turn off strips, and signal completion
     if (elapsedTime >= flashDuration + burstDuration) {
-      sequenceActive = false;
+      currentState = IDLE;
       strip1Flashing = false;
       strip6Bursting = false;
       // Turn off all strips
 #ifdef ENABLE_STRIP1
       fill_solid(strip1, NUM_LEDS_PER_STRIP, CRGB::Black);
 #endif
+#ifdef ENABLE_STRIP2
+      fill_solid(strip2, NUM_LEDS_PER_STRIP, CRGB::Black);
+#endif
+#ifdef ENABLE_STRIP3
+      fill_solid(strip3, NUM_LEDS_PER_STRIP, CRGB::Black);
+#endif
+#ifdef ENABLE_STRIP4
+      fill_solid(strip4, NUM_LEDS_PER_STRIP, CRGB::Black);
+#endif
+#ifdef ENABLE_STRIP5
+      fill_solid(strip5, NUM_LEDS_PER_STRIP, CRGB::Black);
+#endif
 #ifdef ENABLE_STRIP6
       fill_solid(strip6, NUM_LEDS_PER_STRIP, CRGB::Black);
 #endif
       FastLED.show();
-     Serial.println("Climax sequence completed");
-  // Send completion confirmation to both Serial and Serial2
-  Serial.println("!!MASTER:CONFIRM:STOP_CLIMAX_TOP##");
-  Serial2.println("!!MASTER:CONFIRM:STOP_CLIMAX_TOP##");
+      Serial.println("Climax sequence completed. Returning to IDLE.");
+      // Send completion confirmation to both Serial and Serial2
+      Serial.println("!!MASTER:CONFIRM:STOP_CLIMAX_TOP##");
+      Serial2.println("!!MASTER:CONFIRM:STOP_CLIMAX_TOP##");
     }
   } else {
-    // Idle state - keep strips off
-#ifdef ENABLE_STRIP1
-    fill_solid(strip1, NUM_LEDS_PER_STRIP, CRGB::Black);
-#endif
-#ifdef ENABLE_STRIP6
-    fill_solid(strip6, NUM_LEDS_PER_STRIP, CRGB::Black);
-#endif
-    FastLED.show();
+    // IDLE state: Keep strips off and wait for a command.
+    turnOffAllStrips();
+    // Periodic status ping to show we're alive and ready
+    static unsigned long lastPing = 0;
+    if (currentTime - lastPing > 10000) { // Ping every 10 seconds
+      lastPing = currentTime;
+      Serial.println("!!TOP:STATUS:IDLE##");
+      Serial2.println("!!TOP:STATUS:IDLE##");
+    }
   }
 
   FastLED.show();
@@ -246,97 +281,68 @@ void loop() {
 
 // Function to check for serial commands
 void checkSerialCommands() {
+  // Local lambda to process complete commands within a buffer
+  auto processBuffer = [&](String &buf, const char* sourceTag) {
+    int sepIdx;
+    while ((sepIdx = buf.indexOf("##")) != -1) {
+      String cmd = buf.substring(0, sepIdx + 2);
+      buf.remove(0, sepIdx + 2);
+      // Trim any CR/LF that might immediately follow
+      while (buf.length() > 0 && (buf[0] == '\\r' || buf[0] == '\\n' || buf[0] == ' ')) {
+        buf.remove(0, 1);
+      }
+
+      cmd.trim();
+
+      if (cmd.startsWith("!!TOP:REQUEST:START_CLIMAX_TOP")) {
+        // Extract time if present
+        int startIdx = cmd.indexOf('{');
+        int endIdx = cmd.indexOf('}');
+        if (startIdx != -1 && endIdx != -1 && endIdx > startIdx) {
+          String timeStr = cmd.substring(startIdx + 1, endIdx);
+          Serial.println(String("(") + sourceTag + ") Start with time: " + timeStr);
+        }
+
+        // Confirm and (re)start
+        Serial.println("!MASTER:CONFIRM:START_CLIMAX_TOP##");
+        Serial2.println("!MASTER:CONFIRM:START_CLIMAX_TOP##");
+
+        currentState = RUNNING;
+        startTime = millis();
+        strip1Flashing = false; // Reset phase flags
+        strip6Bursting = false;
+        Serial.println(String("(") + sourceTag + ") Starting (or restarting) climax sequence");
+      } else if (cmd.startsWith("!!TOP:REQUEST:STOP_CLIMAX_TOP")) {
+        // Stop and go idle
+        if (currentState == RUNNING) {
+          currentState = IDLE;
+          strip1Flashing = false;
+          strip6Bursting = false;
+          turnOffAllStrips();
+          FastLED.show();
+          Serial.println(String("(") + sourceTag + ") Stopped sequence. Returning to IDLE.");
+          Serial.println("!!MASTER:CONFIRM:STOP_CLIMAX_TOP##");
+          Serial2.println("!!MASTER:CONFIRM:STOP_CLIMAX_TOP##");
+        }
+      } else {
+        // Unknown command: ignore silently to avoid clogging
+      }
+    }
+  };
+
+  // Read from USB Serial
   while (Serial.available()) {
     char c = Serial.read();
     serialBuffer += c;
-
-    // Check if we have a complete command
-    if (serialBuffer.endsWith("##")) {
-      if (serialBuffer.startsWith("!!TOP:REQUEST:START_CLIMAX_TOP")) {
-        // Extract time if needed (for future use)
-        int startIdx = serialBuffer.indexOf('{');
-        int endIdx = serialBuffer.indexOf('}');
-        if (startIdx != -1 && endIdx != -1) {
-          String timeStr = serialBuffer.substring(startIdx + 1, endIdx);
-          Serial.println("Received start climax command with time: " + timeStr);
-        }
-
-        // Send confirmation on both Serial and Serial2
-        Serial.println("!MASTER:CONFIRM:START_CLIMAX_TOP##");
-        Serial2.println("!MASTER:CONFIRM:START_CLIMAX_TOP##");
-
-        // Start the sequence
-        if (!sequenceActive) {
-          sequenceActive = true;
-          startTime = millis();
-          Serial.println("Starting climax sequence");
-        }
-      } else if (serialBuffer.startsWith("!!TOP:REQUEST:STOP_CLIMAX_TOP")) {
-        // Stop the sequence
-        if (sequenceActive) {
-          sequenceActive = false;
-          strip1Flashing = false;
-          strip6Bursting = false;
-          // Turn off all strips
-#ifdef ENABLE_STRIP1
-          fill_solid(strip1, NUM_LEDS_PER_STRIP, CRGB::Black);
-#endif
-#ifdef ENABLE_STRIP6
-          fill_solid(strip6, NUM_LEDS_PER_STRIP, CRGB::Black);
-#endif
-          FastLED.show();
-          Serial.println("Climax sequence stopped manually");
-          // Send stop confirmation to both Serial and Serial2
-          Serial.println("!!MASTER:CONFIRM:STOP_CLIMAX_TOP##");
-          Serial2.println("!!MASTER:CONFIRM:STOP_CLIMAX_TOP##");
-        }
-      }
-      serialBuffer = "";  // Clear buffer
-    }
   }
+  processBuffer(serialBuffer, "USB");
 
-  // Also read from Serial2 (external TX/RX)
+  // Read from Serial2 (external TX/RX)
   while (Serial2.available()) {
     char c2 = Serial2.read();
     serial2Buffer += c2;
-
-    if (serial2Buffer.endsWith("##")) {
-      if (serial2Buffer.startsWith("!!TOP:REQUEST:START_CLIMAX_TOP")) {
-        int startIdx = serial2Buffer.indexOf('{');
-        int endIdx = serial2Buffer.indexOf('}');
-        if (startIdx != -1 && endIdx != -1) {
-          String timeStr2 = serial2Buffer.substring(startIdx + 1, endIdx);
-          Serial.println("(RX2) Received start climax command with time: " + timeStr2);
-        }
-        // Send confirmation on both Serial and Serial2
-        Serial.println("!MASTER:CONFIRM:START_CLIMAX_TOP##");
-        Serial2.println("!MASTER:CONFIRM:START_CLIMAX_TOP##");
-        if (!sequenceActive) {
-          sequenceActive = true;
-          startTime = millis();
-          Serial.println("(RX2) Starting climax sequence");
-        }
-      } else if (serial2Buffer.startsWith("!!TOP:REQUEST:STOP_CLIMAX_TOP")) {
-        if (sequenceActive) {
-          sequenceActive = false;
-          strip1Flashing = false;
-          strip6Bursting = false;
-#ifdef ENABLE_STRIP1
-          fill_solid(strip1, NUM_LEDS_PER_STRIP, CRGB::Black);
-#endif
-#ifdef ENABLE_STRIP6
-          fill_solid(strip6, NUM_LEDS_PER_STRIP, CRGB::Black);
-#endif
-          FastLED.show();
-          Serial.println("(RX2) Climax sequence stopped manually");
-          // Send stop confirmation on both ports
-          Serial.println("!!MASTER:CONFIRM:STOP_CLIMAX_TOP##");
-          Serial2.println("!!MASTER:CONFIRM:STOP_CLIMAX_TOP##");
-        }
-      }
-      serial2Buffer = ""; // Clear buffer
-    }
   }
+  processBuffer(serial2Buffer, "RX2");
 }
 
 // Function for charging effect on strips 1-5
