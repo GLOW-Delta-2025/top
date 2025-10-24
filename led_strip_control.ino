@@ -11,6 +11,11 @@
   - Strip 1: Represents the 5-strip main array (charging effect)
   - Strip 6: Independent climax element (intense flow effect)
 
+  PING and DEBUG STATEMENTS: 
+  - It is sending IDLE state Ping to ensure the device is actively waiting and responsive.
+  - It also informs what strips are initialized at startup for verification.
+  - These are needed for development and can be removed in production.
+
   ENABLING ALL 6 STRIPS FOR PRODUCTION:
   1. Uncomment all #define ENABLE_STRIPx lines (lines 20-25)
   2. Wire each strip to its assigned GPIO pin
@@ -374,7 +379,7 @@ void chargingEffect() {
   const unsigned long elapsedTime = millis() - startTime;
 
   // Fast repeating ping-pong fill across the strip
-  const uint16_t cycleMs = 1000; // 1 second there-and-back
+  const uint16_t cycleMs = 2000; // 2 seconds there-and-back
   uint16_t phase = elapsedTime % cycleMs;
   bool descending = phase >= (cycleMs / 2);
   int half = cycleMs / 2;
