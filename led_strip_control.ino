@@ -361,8 +361,9 @@ void checkSerialCommands() {
 void chargingEffect() {
   static unsigned long lastUpdate = 0;
 
-  if (millis() - lastUpdate <= 100) {
-    return;  // Maintain 100ms update cadence for a smooth fill
+  // Faster cadence for a snappier look
+  if (millis() - lastUpdate <= 60) {
+    return;  // ~16 FPS
   }
   lastUpdate = millis();
 
@@ -371,21 +372,33 @@ void chargingEffect() {
   }
 
   const unsigned long elapsedTime = millis() - startTime;
-  int fillProgress = map(elapsedTime, 0, flashDuration, 0, NUM_LEDS_PER_STRIP);
+
+  // Fast repeating ping-pong fill across the strip
+  const uint16_t cycleMs = 1000; // 1 second there-and-back
+  uint16_t phase = elapsedTime % cycleMs;
+  bool descending = phase >= (cycleMs / 2);
+  int half = cycleMs / 2;
+  int fillProgress;
+  if (!descending) {
+    fillProgress = map(phase, 0, half, 0, NUM_LEDS_PER_STRIP);
+  } else {
+    int phase2 = phase - half;
+    fillProgress = map(phase2, 0, half, NUM_LEDS_PER_STRIP, 0);
+  }
   fillProgress = constrain(fillProgress, 0, NUM_LEDS_PER_STRIP);
 
   // Apply identical gradient and clearing logic to every charging strip
   for (size_t idx = 0; idx < chargingStripCount; ++idx) {
     CRGB* leds = chargingStrips[idx];
 
+    // Clear first for crisp motion
+    fill_solid(leds, NUM_LEDS_PER_STRIP, CRGB::Black);
+
+    // Draw the current fill with a blue->white gradient
     for (int i = 0; i < fillProgress; ++i) {
       uint8_t blue = map(i, 0, NUM_LEDS_PER_STRIP - 1, 255, 0);
       uint8_t white = map(i, 0, NUM_LEDS_PER_STRIP - 1, 0, 255);
       leds[i] = CRGB(white, white, blue);
-    }
-
-    for (int i = fillProgress; i < NUM_LEDS_PER_STRIP; ++i) {
-      leds[i] = CRGB::Black;
     }
   }
 }
@@ -406,31 +419,37 @@ void chargingEffect() {
 void intenseFlow() {
   static unsigned long lastUpdate = 0;
   static int flowPosition = 0;
+  static uint8_t hue = 0;
 
-  if (millis() - lastUpdate > 50) {  // Faster updates for intensity
+  if (millis() - lastUpdate > 30) {  // Very fast, intense look
     lastUpdate = millis();
 
 #ifdef ENABLE_STRIP6
-    // Clear strip
-    fill_solid(strip6, NUM_LEDS_PER_STRIP, CRGB::Black);
+    // Base yellow glow across the entire strip (never off while active)
+    const CRGB baseYellow = CRGB(90, 90, 0);
+    fill_solid(strip6, NUM_LEDS_PER_STRIP, baseYellow);
 
-    // Create flowing stream effect
+    // Create a multi-color flowing stream overlay
     int streamLength = 15;  // Length of the flowing stream
     for (int i = 0; i < streamLength; i++) {
       int ledIndex = (flowPosition - i + NUM_LEDS_PER_STRIP) % NUM_LEDS_PER_STRIP;
-      // Gradient from bright white (head) to dim blue (tail)
-      uint8_t brightness = map(i, 0, streamLength - 1, 255, 50);
-      uint8_t blue = map(i, 0, streamLength - 1, 0, 200);
-      strip6[ledIndex] = CRGB(brightness, brightness, blue);
+      // Gradient from bright colorful head to dimmer tail
+      uint8_t v = map(i, 0, streamLength - 1, 255, 80);
+      uint8_t localHue = hue + i * 6; // color variation along the stream
+      CRGB c; c.setHSV(localHue, 255, v);
+      // Add on top of base yellow (saturating add)
+      strip6[ledIndex] += c;
     }
 
-    // Add some random sparks
-    if (random(10) < 3) {  // 30% chance
+    // Add frequent colorful sparks
+    if (random(10) < 4) {  // 40% chance per frame
       int sparkIndex = random(NUM_LEDS_PER_STRIP);
-      strip6[sparkIndex] = CRGB::White;
+      CRGB spark; spark.setHSV(hue + random8(), 200, 255);
+      strip6[sparkIndex] += spark; // overlay spark
     }
 
     flowPosition = (flowPosition + 1) % NUM_LEDS_PER_STRIP;
+    hue += 3; // slowly shift hue for diversity
 #endif
   }
 }
