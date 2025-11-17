@@ -1,0 +1,241 @@
+# GLOW 2025 — DMX Lamps Dev Plan (Corrected)
+
+Summary
+- 5 DMX lamps total (18 LEDs each assumed), all behave the same.
+- Split 3 lamps on one TinkerKit T040060 shield (Universe 1) and 2 lamps on the other (Universe 2).
+- Teensy 4.1 synchronizes both universes and mirrors the same channel data (ch 1–108) to both.
+- Control input: during development via USB Serial; production also able to receive the same commands via a spare UART ("tx_rx" pins).
+- Physical limitation: one DMX output reliably drives up to ~3 fixtures chained.
+- Controller: Teensy 4.1 with TeensyDMX. TinkerKit shields used only as RS‑485 line drivers (no DmxMaster library).
+
+Decision
+- Standardize on Teensy 4.1 + TeensyDMX (2 universes via Serial1 and Serial2).
+- TinkerKit T040060 shields are used as RS‑485 transceivers only.
+- Do NOT use the DmxMaster library.
+
+Open items to confirm
+- Fixture model(s) and DMX personality (assume 108-ch until confirmed).
+- Exact RGB channel indices for each LED block (or master dimmer layout).
+- Whether 3‑pin or 5‑pin XLR mapping (Pin 1 GND, Pin 2 Data−, Pin 3 Data+).
+
+---
+
+## Hardware Architecture
+
+Universes
+- Universe 1 (Serial1, Teensy pin 1 TX): 3 lamps in chain (A1, A2, A3).
+- Universe 2 (Serial2, Teensy pin 8 TX): 2 lamps in chain (A4, A5).
+
+Wiring (Teensy 4.1)
+- Serial1 TX: pin 1 → RS‑485 DI on Shield #1 (Universe 1)
+- Serial2 TX: pin 8 → RS‑485 DI on Shield #2 (Universe 2)
+- Optional RX lines not used for send‑only DMX.
+- GND: common between Teensy, shields, and lamp PSU
+- XLR to lamps: Pin 1 GND, Pin 2 Data− (B), Pin 3 Data+ (A)
+- Termination: last fixture in each chain ON (120 Ω)
+- DE/RE on shields: tie to enable transmit (or follow shield docs). DMX is transmit‑only for controller.
+
+Control UART (commands)
+- Use a free UART on Teensy for external commands (e.g., Serial3). Wire RX/TX to your controller’s TX/RX per Teensy 4.1 pinout. Share GND.
+- During development, the same commands can be sent over USB Serial.
+
+Power
+- Lamps powered from mains with their PSUs.
+- Teensy powered via USB or regulated 5V; do not power lamps from Teensy.
+
+---
+
+## DMX Addressing Plan (assumes 108 channels/fixture)
+
+Universe 1 (Serial1)
+- A1 start: 1
+- A2 start: 1 + 108 = 109
+- A3 start: 217
+
+Universe 2 (Serial2)
+- A4 start: 1
+- A5 start: 109
+
+Set these via fixture menu/DIP and select the same 108‑ch personality on all lamps.
+
+---
+
+## Software Architecture
+
+Libraries
+- qindesign/TeensyDMX (already working in your main_updated.cpp).
+- No DmxMaster.
+
+Structure
+- Sender dmx1(Serial1), dmx2(Serial2).
+- Address arrays for each universe.
+- Frame buffer or generator drives channels 1–108 identically on both universes (mirrored output).
+- Optional validation mode can send different patterns to U1 vs U2 for hardware checks.
+
+Command Input
+- USB Serial (Serial) and a free UART (default Serial3) accept simple ASCII commands terminated by \n.
+- Minimal protocol:
+  - `FILL <v>`: set ch 1–108 to value 0..255
+  - `GRAD <speed>`: enable gradient animation; `speed` 1..10
+  - `SET <ch> <v>`: set channel 1..108 to value
+  - `BLACKOUT`: set all to 0
+  - `PING`: respond `PONG`
+
+State Machine (simple)
+- INIT → RUN (mirrored output) → optional VALIDATE (different U1/U2 patterns) → RUN
+
+Timing
+- Frame loop at ~100 Hz max; DMX universe refresh is ~44 Hz. Use delay(5–15 ms) or elapsedMillis for pacing.
+
+Diagnostics
+- Periodic Serial prints: which state, frame counter, brightness, last send tick.
+
+---
+
+## Milestones and Tasks
+
+Phase 0 — Repo/Build Hygiene
+- [ ] Keep Teensy code under top/big_lamps_prototype.
+- [ ] Optional: add PlatformIO for repeatable builds.
+
+Phase 1 — Single Lamp Bring‑Up
+- [ ] Universe 1 only, one lamp at address 1.
+- [ ] Send static test values to 3 primary channels (R/G/B) and verify color.
+- [ ] Add Serial prints of set values.
+
+Phase 2 — Chain of 3 on Universe 1
+- [ ] Set A1=1, A2=109, A3=217.
+- [ ] Sweep a simple effect across all three; verify addressing boundaries (A1 doesn’t bleed into A2).
+
+Phase 3 — Add Universe 2 Hardware
+- [ ] Wire Shield #2 to Serial2 TX (pin 8).
+- [ ] Add dmx2.begin(), clear(), and a distinct test color so you can visually separate universes.
+
+Phase 4 — Five Lamps Layout
+- [ ] Address A4=1, A5=109 on Universe 2.
+- [ ] Implement mirrored write that updates A1..A5 across both universes identically (ch 1–108).
+
+Phase 4.5 — Dual‑Universe Validation (Optional)
+- [ ] Ensure both shields are connected: Shield #1 on pin 1 (U1), Shield #2 on pin 8 (U2).
+- [ ] Firmware sends different patterns to channels 1–108 on each universe:
+  - U1: gradient sweep (0..255) across ch 1–108.
+  - U2: inverse/pulsing pattern across ch 1–108.
+- [ ] Verify each universe updates independently even with only one lamp attached.
+
+Phase 5 — Command Protocol + Timings
+- [ ] Implement USB Serial + Serial3 command parser.
+- [ ] Add parameters for animation speed and frame pacing.
+
+Phase 6 — Polish
+- [ ] Add a “blackout” and “all‑on” command for safety.
+- [ ] Add a heartbeat LED on Teensy to indicate running.
+
+Phase 7 — Polish
+- [ ] Add a “blackout” and “all‑on” command for safety.
+- [ ] Add a heartbeat LED on Teensy to indicate running.
+
+---
+
+## Debug and Verification Steps
+
+General
+- If no light: check termination, swap Data+/- (2/3) if colors are inverted or dead, ensure same DMX mode on fixtures.
+- Ensure Teensy GND is tied to shield/XLR pin 1 GND.
+- Confirm TeensyDMX is sending: try a single channel at 255 and others 0.
+
+Per Phase
+1) Single Lamp
+- [ ] Set channel 1=255; verify expected color or master dimmer.
+- [ ] Increment channels 1..10 to map what they do. Log findings.
+
+2) Three Lamps, One Universe
+- [ ] Write ch 108 boundary checks: set last channel of A1=255 and first of A2=0; then flip; ensure isolation.
+- [ ] Disconnect middle lamp to test line loading and termination.
+
+3) Add Universe 2
+- [ ] Use drastically different colors on U1 vs U2 to confirm independent control.
+- [ ] Print which Sender is updated each loop.
+ - [ ] Validation mode: check that ch 1–108 visibly differ between U1 and U2 (e.g., gradient vs inverse pulse). If one universe is dark, recheck pin mapping (pin 1 vs pin 8) and DE/RE enable.
+
+4) Mirrored Output
+- [ ] Verify A1..A5 move together across both universes (same look on both chains).
+- [ ] Measure drift visually; adjust loop pacing if needed.
+
+5) Command Protocol
+- [ ] Send `FILL 128`, `BLACKOUT`, `GRAD 4`, `SET 10 255` via USB Serial and via Serial3; confirm behavior.
+
+Electrical Checks
+- [ ] If intermittent flicker: add/balance bias resistors if shield lacks them; ensure last fixture termination ON.
+- [ ] Keep DMX cable lengths within spec; avoid USB ground loops.
+
+---
+
+## Risks and Mitigations
+
+- Unknown fixture channel maps
+  - Mitigation: quick mapping pass in Phase 1; capture per‑fixture DMX map in a fixtures.md.
+- Channel overlap by wrong start addresses
+  - Mitigation: enforce computed addresses from config; print them at boot.
+- Shield bus driver direction control (DE/RE)
+  - Mitigation: tie DE high/RE low per shield docs; confirm continuous TX.
+
+---
+
+## Deliverables
+
+- Two‑universe Teensy firmware with mirrored output and simple command protocol.
+- fixtures.md with channel map (ground truth from Phase 1).
+- Wiring diagram and address table.
+- Runbook with test steps and known-good parameters.
+
+---
+
+## Optional: PlatformIO Setup
+
+Create platformio.ini:
+```ini
+[env:teensy41]
+platform = teensy
+board = teensy41
+framework = arduino
+lib_deps = qindesign/TeensyDMX@^5
+monitor_speed = 115200
+upload_protocol = teensy-cli
+```
+
+Commands (macOS):
+- Build/Upload: pio run -t upload
+- Monitor: pio device monitor -b 115200
+
+---
+
+## Next Actions (Checklist)
+
+- [ ] Confirm fixture model and DMX personality (is it truly 108‑ch?).
+- [ ] Wire Serial2 → Shield #2 and add dmx2 to code.
+- [ ] Set start addresses per plan and test Phases 1–3.
+- [ ] Add state machine (SYNC_SHOW → SPECIAL_SHOW) and dial durations.
+
+---
+
+## Quick Test Now (Arduino IDE)
+
+Goal: verify Teensy drives two DMX shields independently with different patterns on channels 1–108.
+
+Steps
+1. Hardware: connect Shield #1 to Teensy pin 1 (Serial1 TX) and Shield #2 to pin 8 (Serial2 TX). Share GND. Terminate last fixture in each chain.
+2. Fixture(s): set a lamp’s start address to 1 and 108‑ch mode; connect it to Universe 1, then Universe 2 (or use two lamps simultaneously).
+3. Sketch: open `top/big_lamps_prototype/main_updated.cpp` in Arduino IDE by creating a new sketch and pasting the file contents into a `.ino` (Arduino requires `.ino`).
+4. Board: Tools → Board → Teensy 4.1; USB Type: Serial; CPU Speed: 600 MHz.
+5. Upload and open Serial Monitor at 115200 baud.
+
+Expected Result (Mirrored)
+- Universe 1 (pin 1) and Universe 2 (pin 8): both show the same pattern when in normal RUN mode (e.g., gradient or fill).
+- In optional VALIDATE mode, U1 and U2 differ so you can verify hardware paths.
+- Serial prints every ~50 frames: `frame=... state=... ch1=...`.
+
+If Not Working
+- Confirm the lamp is on address 1; try setting channel 1 to 255 temporarily to see any response.
+- Swap Data+/- on XLR pins 2/3 if the chain is dark.
+- Ensure DE/RE on the shield is enabled for transmit; tie DE high and RE low per shield docs.
+- Verify you’re connected to the right universe (pin 1 vs pin 8).

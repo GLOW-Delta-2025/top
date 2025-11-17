@@ -1,0 +1,1 @@
+This folder contains code for testing ESP and a single LED strip demo for testing individual strips. 
